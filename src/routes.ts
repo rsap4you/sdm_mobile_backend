@@ -11,6 +11,19 @@ const fail = (status: number, message: string) => Object.assign(new Error(messag
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const esc = (s: unknown) => String(s ?? "").trim().slice(0, 300);
 
+// ---- Ahmedabad address + pincode validation ----
+// City range 380001-380063. Outskirts use 382xxx: add/verify yours in AMD_EXTRA (India Post list).
+const AMD_EXTRA = new Set<string>(["382330", "382350", "382424", "382481"]);
+const validPin = (p: string) => /^\d{6}$/.test(p) && ((+p >= 380001 && +p <= 380063) || AMD_EXTRA.has(p));
+
+const addr = (b: any) => {
+  const a = b?.address || {};
+  const x = { line1: esc(a.line1), line2: esc(a.line2), landmark: esc(a.landmark), city: "Ahmedabad", pincode: esc(a.pincode) };
+  if (x.line1.length < 5) throw fail(400, "Please enter your full address (house no., society, area).");
+  if (!validPin(x.pincode)) throw fail(400, "Sorry, we currently serve Ahmedabad pincodes only.");
+  return x;
+};
+
 const hash = (pw: string) => { const s = crypto.randomBytes(16).toString("hex"); return s + ":" + crypto.scryptSync(pw, s, 64).toString("hex"); };
 const check = (pw: string, h: string) => { const [s, k] = (h || ":").split(":"); return same(crypto.scryptSync(pw, s, 64).toString("hex"), k || ""); };
 const tok = (id: string) => jwt.sign({ u: id }, process.env.JWT_SECRET!, { expiresIn: "30d" });
@@ -31,8 +44,9 @@ const strict = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20 });
 r.post("/repairs", strict, async (req, res) => {
   const b = req.body || {};
   if (!esc(b.name) || !/^\d{10}$/.test(b.phone || "") || !esc(b.issue)) throw fail(400, "Enter name, a 10-digit phone number and the issue.");
+  const address = addr(b);
   const ticket = "SDM-" + crypto.randomBytes(3).toString("hex").slice(0, 5).toUpperCase();
-  await Repair.create({ ticket, userId: getUid(req), name: esc(b.name), phone: b.phone, brand: esc(b.brand), model: esc(b.model), issue: esc(b.issue), notes: esc(b.notes) });
+  await Repair.create({ ticket, userId: getUid(req), name: esc(b.name), phone: b.phone, brand: esc(b.brand), model: esc(b.model), issue: esc(b.issue), notes: esc(b.notes), address });
   res.json({ ticket });
 });
 r.get("/repairs", strict, async (req, res) => {
@@ -46,19 +60,27 @@ r.get("/products", async (_q, res) => res.json(await Product.find({ inStock: tru
 r.post("/auth/signup", strict, async (req, res) => {
   const b = req.body || {}, email = esc(b.email).toLowerCase();
   if (!esc(b.name) || !mail.test(email) || !/^\d{10}$/.test(b.phone || "") || String(b.password || "").length < 8) throw fail(400, "Enter your name, a valid email, a 10-digit phone number and a password of 8 or more characters.");
+  const address = addr(b);
   if (await User.findOne({ email })) throw fail(409, "This email is already registered. Please log in.");
-  const u: any = await User.create({ name: esc(b.name), email, phone: b.phone, password: hash(String(b.password)) });
-  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone } });
+  const u: any = await User.create({ name: esc(b.name), email, phone: b.phone, password: hash(String(b.password)), address });
+  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address } });
 });
 r.post("/auth/login", strict, async (req, res) => {
   const u: any = await User.findOne({ email: esc(req.body?.email).toLowerCase() });
   if (!u || !check(String(req.body?.password || ""), u.password)) throw fail(401, "Wrong email or password.");
-  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone } });
+  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address } });
 });
 r.get("/auth/me", user, async (req: any, res) => {
   const u: any = await User.findById(req.uid).lean();
   if (!u) throw fail(401, "Please log in.");
-  res.json({ name: u.name, email: u.email, phone: u.phone });
+  res.json({ name: u.name, email: u.email, phone: u.phone, address: u.address });
+});
+// Update saved address (for old users who signed up before address was added)
+r.patch("/auth/address", user, async (req: any, res) => {
+  const address = addr(req.body);
+  const u: any = await User.findByIdAndUpdate(req.uid, { address }, { new: true }).lean();
+  if (!u) throw fail(401, "Please log in.");
+  res.json({ address: u.address });
 });
 r.get("/my/repairs", user, async (req: any, res) => res.json(await Repair.find({ userId: req.uid }).sort({ createdAt: -1 }).select("-adminNote -userId").lean()));
 
@@ -86,7 +108,7 @@ r.get("/admin/dashboard", admin, async (_q, res) => {
 r.get("/admin/repairs", admin, async (req, res) => {
   const q = esc(req.query.q), status = esc(req.query.status), f: any = {};
   if (status) f.status = status;
-  if (q) { const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); f.$or = [{ ticket: rx }, { name: rx }, { phone: rx }, { model: rx }]; }
+  if (q) { const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); f.$or = [{ ticket: rx }, { name: rx }, { phone: rx }, { model: rx }, { "address.pincode": rx }]; }
   res.json(await Repair.find(f).sort({ createdAt: -1 }).limit(200).lean());
 });
 r.patch("/admin/repairs/:id", admin, async (req, res) => {
