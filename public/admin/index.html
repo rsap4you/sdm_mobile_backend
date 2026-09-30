@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SDM Admin</title>
+<style>
+:root{--ink:#1b0d2c;--panel:#2a1745;--line:#4a2f73;--pink:#ee3f8b;--orange:#f7931e;--blue:#33aee6;--text:#f5eefc;--mute:#b9a6d3}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--text);font:15px/1.5 system-ui,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--line)}header b{margin-right:auto;font-size:1.1rem}
+main{max-width:1100px;margin:0 auto;padding:20px}button,input,select{font:inherit;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);padding:8px 12px}
+button{cursor:pointer}button.on,button.p{background:var(--pink);border-color:var(--pink);color:#fff}:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}.stat{background:var(--panel);border-left:4px solid var(--orange);padding:12px;border-radius:6px}.stat b{font-size:1.7rem;display:block}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.tw{overflow-x:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+a{color:var(--blue)}.err{color:#ff8fa8}img.t{width:44px;height:44px;object-fit:cover;border-radius:6px}.hide{display:none}
+</style></head><body>
+<div id="login" class="hide"><main style="max-width:360px"><h2>Admin login</h2><form id="lf" style="display:grid;gap:10px"><input id="pw" type="password" placeholder="Password" required><button class="p">Log in</button><div id="le" class="err" role="alert"></div></form></main></div>
+<div id="app" class="hide"><header><b>SDM Mobile admin</b><button data-t="dash" class="on">Dashboard</button><button data-t="rep">Repairs</button><button data-t="prod">Accessories</button><button data-t="msg">Messages</button><button id="out">Log out</button></header><main id="v"></main></div>
+<script>
+const $=s=>document.querySelector(s),ST=["received","diagnosing","in repair","ready for pickup","delivered"];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let tab="dash";
+async function api(u,m="GET",b){const h={Authorization:"Bearer "+sessionStorage.tk};let body=b;if(b&&!(b instanceof FormData)){h["Content-Type"]="application/json";body=JSON.stringify(b)}
+ const r=await fetch("/api"+u,{method:m,headers:h,body});if(r.status===401&&u!=="/admin/login"){sessionStorage.clear();show();throw 0}const d=await r.json();if(!r.ok)throw new Error(d.error);return d}
+function show(){const on=!!sessionStorage.tk;$("#login").classList.toggle("hide",on);$("#app").classList.toggle("hide",!on);if(on)go(tab)}
+$("#lf").onsubmit=async e=>{e.preventDefault();try{const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:$("#pw").value})});const d=await r.json();if(!r.ok)throw new Error(d.error);sessionStorage.tk=d.token;show()}catch(x){$("#le").textContent=x.message}};
+$("#out").onclick=()=>{sessionStorage.clear();show()};
+document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>go(b.dataset.t));
+async function go(t){tab=t;document.querySelectorAll("[data-t]").forEach(b=>b.classList.toggle("on",b.dataset.t===t));({dash,rep,prod,msg})[t]()}
+async function dash(){const d=await api("/admin/dashboard");$("#v").innerHTML=`<div class="stats"><div class="stat"><b>${d.today}</b>New today</div>${ST.map(s=>`<div class="stat"><b>${d.byStatus[s]}</b>${s}</div>`).join("")}<div class="stat"><b>${d.products}</b>Accessories</div></div>`}
+async function rep(q="",s=""){const l=await api(`/admin/repairs?q=${encodeURIComponent(q)}&status=${encodeURIComponent(s)}`);
+ $("#v").innerHTML=`<div class="bar"><input id="q" placeholder="Search ticket, name, phone, model" value="${esc(q)}" style="flex:1;min-width:220px"><select id="s"><option value="">All statuses</option>${ST.map(x=>`<option ${x===s?"selected":""}>${x}</option>`).join("")}</select></div>
+ <div class="tw"><table><thead><tr><th>Ticket</th><th>Customer</th><th>Device / issue</th><th>Estimate ₹</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody>${l.length?l.map(r=>`<tr data-id="${r._id}"><td>${esc(r.ticket)}<br><small>${new Date(r.createdAt).toLocaleDateString()}</small></td>
+ <td>${esc(r.name)}<br><a href="https://wa.me/91${esc(r.phone)}">${esc(r.phone)}</a></td><td>${esc(r.brand)} ${esc(r.model)}<br>${esc(r.issue)}${r.notes?`<br><small>${esc(r.notes)}</small>`:""}</td>
+ <td><input data-f="estimate" type="number" style="width:90px" value="${r.estimate||""}"></td><td><select data-f="status">${ST.map(x=>`<option ${x===r.status?"selected":""}>${x}</option>`).join("")}</select></td>
+ <td><input data-f="adminNote" value="${esc(r.adminNote)}" placeholder="Internal note"></td><td><button data-del>Delete</button></td></tr>`).join(""):`<tr><td colspan="7">No repairs match.</td></tr>`}</tbody></table></div>`;
+ let t;$("#q").oninput=e=>{clearTimeout(t);t=setTimeout(()=>rep(e.target.value,$("#s").value),350)};$("#s").onchange=e=>rep($("#q").value,e.target.value);
+ document.querySelectorAll("tr[data-id]").forEach(tr=>{tr.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>api("/admin/repairs/"+tr.dataset.id,"PATCH",{[i.dataset.f]:i.value}).catch(e=>alert(e.message)));
+  tr.querySelector("[data-del]").onclick=async()=>{if(confirm("Delete this repair permanently?")){await api("/admin/repairs/"+tr.dataset.id,"DELETE");rep($("#q").value,$("#s").value)}}})}
+async function prod(){const l=await api("/admin/products");
+ $("#v").innerHTML=`<form id="pf" class="bar"><input name="name" placeholder="Name" required><input name="price" type="number" min="0" placeholder="Price ₹" required style="width:110px"><input name="category" placeholder="Category"><input name="image" type="file" accept="image/jpeg,image/png,image/webp"><button class="p">Add accessory</button><span id="pe" class="err" role="alert"></span></form>
+ <div class="tw"><table><tbody>${l.length?l.map(p=>`<tr data-id="${p._id}"><td>${p.image?`<img class="t" src="${esc(p.image)}" alt="">`:""}</td><td>${esc(p.name)}<br><small>${esc(p.category)}</small></td><td>₹${p.price}</td>
+ <td><label><input type="checkbox" data-stock ${p.inStock?"checked":""}> In stock</label></td><td><button data-del>Delete</button></td></tr>`).join(""):`<tr><td>No accessories yet. Add your first one above.</td></tr>`}</tbody></table></div>`;
+ $("#pf").onsubmit=async e=>{e.preventDefault();try{await api("/admin/products","POST",new FormData(e.target));prod()}catch(x){$("#pe").textContent=x.message}};
+ document.querySelectorAll("tr[data-id]").forEach(tr=>{tr.querySelector("[data-stock]").onchange=e=>api("/admin/products/"+tr.dataset.id,"PATCH",{inStock:e.target.checked});
+  tr.querySelector("[data-del]").onclick=async()=>{if(confirm("Delete this accessory?")){await api("/admin/products/"+tr.dataset.id,"DELETE");prod()}}})}
+async function msg(){const l=await api("/admin/messages");$("#v").innerHTML=`<div class="tw"><table><tbody>${l.length?l.map(m=>`<tr data-id="${m._id}"><td>${new Date(m.createdAt).toLocaleDateString()}</td><td>${esc(m.name)}<br>${m.phone?`<a href="https://wa.me/91${esc(m.phone)}">${esc(m.phone)}</a>`:""} ${esc(m.email)}</td><td>${esc(m.message)}</td><td><button data-del>Delete</button></td></tr>`).join(""):`<tr><td>No messages yet.</td></tr>`}</tbody></table></div>`;
+ document.querySelectorAll("tr[data-id]").forEach(tr=>tr.querySelector("[data-del]").onclick=async()=>{if(confirm("Delete this message?")){await api("/admin/messages/"+tr.dataset.id,"DELETE");msg()}})}
+show();
+</script></body></html>
