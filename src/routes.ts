@@ -3,8 +3,8 @@ import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import multer from "multer";
-import path from "path";
 import { Repair, Product, User, Message, STATUSES } from "./models";
+import { productImageStorage, profileImageStorage } from "./Cloudnary";
 
 const r = Router();
 const fail = (status: number, message: string) => Object.assign(new Error(message), { status });
@@ -34,9 +34,18 @@ const admin = (req: Request, _res: Response, next: NextFunction) => {
   try { const p: any = jwt.verify((req.headers.authorization || "").replace("Bearer ", ""), process.env.JWT_SECRET!); if (!p.a) throw 0; next(); }
   catch { next(fail(401, "Login required.")); }
 };
+
+// Product images now upload straight to Cloudinary instead of local disk
+// (see ./cloudinary.ts for the storage engine + folder/transform config).
 const upload = multer({
-  storage: multer.diskStorage({ destination: "uploads", filename: (_q, f, cb) => cb(null, Date.now() + path.extname(f.originalname).toLowerCase().replace(/[^.a-z0-9]/g, "")) }),
-  limits: { fileSize: 3 * 1024 * 1024 }, fileFilter: (_q, f, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(f.mimetype)),
+  storage: productImageStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_q, f, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(f.mimetype)),
+});
+const uploadProfile = multer({
+  storage: profileImageStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_q, f, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(f.mimetype)),
 });
 const strict = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20 });
 
@@ -45,8 +54,14 @@ r.post("/repairs", strict, async (req, res) => {
   const b = req.body || {};
   if (!esc(b.name) || !/^\d{10}$/.test(b.phone || "") || !esc(b.issue)) throw fail(400, "Enter name, a 10-digit phone number and the issue.");
   const address = addr(b);
+  const imei = esc(b.imei).replace(/[\s-]/g, "");
+  if (imei && !/^\d{15}$/.test(imei)) throw fail(400, "IMEI must be 15 digits (dial *#06# on the phone to see it).");
+  if (!esc(b.brand) || !esc(b.model)) throw fail(400, "Enter the phone brand and model number.");
+  const whatsapp = esc(b.whatsapp).replace(/[\s-]/g, ""), email = esc(b.email).toLowerCase();
+  if (whatsapp && !/^\d{10}$/.test(whatsapp)) throw fail(400, "WhatsApp number must be 10 digits.");
+  if (email && !mail.test(email)) throw fail(400, "Enter a valid email address.");
   const ticket = "SDM-" + crypto.randomBytes(3).toString("hex").slice(0, 5).toUpperCase();
-  await Repair.create({ ticket, userId: getUid(req), name: esc(b.name), phone: b.phone, brand: esc(b.brand), model: esc(b.model), issue: esc(b.issue), notes: esc(b.notes), address });
+  await Repair.create({ ticket, userId: getUid(req), name: esc(b.name), phone: b.phone, whatsapp, email, brand: esc(b.brand), company: esc(b.company), model: esc(b.model), imei, issue: esc(b.issue), notes: esc(b.notes), address });
   res.json({ ticket });
 });
 r.get("/repairs", strict, async (req, res) => {
@@ -63,17 +78,24 @@ r.post("/auth/signup", strict, async (req, res) => {
   const address = addr(b);
   if (await User.findOne({ email })) throw fail(409, "This email is already registered. Please log in.");
   const u: any = await User.create({ name: esc(b.name), email, phone: b.phone, password: hash(String(b.password)), address });
-  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address } });
+  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address, profileImage: u.profileImage || "" } });
 });
 r.post("/auth/login", strict, async (req, res) => {
   const u: any = await User.findOne({ email: esc(req.body?.email).toLowerCase() });
   if (!u || !check(String(req.body?.password || ""), u.password)) throw fail(401, "Wrong email or password.");
-  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address } });
+  res.json({ token: tok(String(u._id)), user: { name: u.name, email: u.email, phone: u.phone, address: u.address, profileImage: u.profileImage || "" } });
 });
 r.get("/auth/me", user, async (req: any, res) => {
   const u: any = await User.findById(req.uid).lean();
   if (!u) throw fail(401, "Please log in.");
-  res.json({ name: u.name, email: u.email, phone: u.phone, address: u.address });
+  res.json({ name: u.name, email: u.email, phone: u.phone, address: u.address, profileImage: u.profileImage || "" });
+});
+// Upload / replace the logged-in user's profile picture
+r.post("/auth/profile-image", user, uploadProfile.single("image"), async (req: any, res) => {
+  if (!req.file) throw fail(400, "No image uploaded.");
+  const url = (req.file as any).path;
+  await User.findByIdAndUpdate(req.uid, { profileImage: url });
+  res.json({ profileImage: url });
 });
 // Update saved address (for old users who signed up before address was added)
 r.patch("/auth/address", user, async (req: any, res) => {
@@ -108,7 +130,7 @@ r.get("/admin/dashboard", admin, async (_q, res) => {
 r.get("/admin/repairs", admin, async (req, res) => {
   const q = esc(req.query.q), status = esc(req.query.status), f: any = {};
   if (status) f.status = status;
-  if (q) { const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); f.$or = [{ ticket: rx }, { name: rx }, { phone: rx }, { model: rx }, { "address.pincode": rx }]; }
+  if (q) { const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); f.$or = [{ ticket: rx }, { name: rx }, { phone: rx }, { whatsapp: rx }, { email: rx }, { model: rx }, { imei: rx }, { "address.pincode": rx }]; }
   res.json(await Repair.find(f).sort({ createdAt: -1 }).limit(200).lean());
 });
 r.patch("/admin/repairs/:id", admin, async (req, res) => {
@@ -123,7 +145,12 @@ r.get("/admin/products", admin, async (_q, res) => res.json(await Product.find()
 r.post("/admin/products", admin, upload.single("image"), async (req, res) => {
   const b = req.body || {};
   if (!esc(b.name) || !(Number(b.price) >= 0) || b.price === "") throw fail(400, "Name and price are required.");
-  res.json(await Product.create({ name: esc(b.name), price: Number(b.price), category: esc(b.category), image: req.file ? "/uploads/" + req.file.filename : "" }));
+  res.json(await Product.create({
+    name: esc(b.name),
+    price: Number(b.price),
+    category: esc(b.category),
+    image: (req.file as any)?.path || "",   // Cloudinary's hosted URL, e.g. https://res.cloudinary.com/...
+  }));
 });
 r.patch("/admin/products/:id", admin, async (req, res) => res.json(await Product.findByIdAndUpdate(req.params.id, { inStock: !!req.body?.inStock }, { new: true })));
 r.delete("/admin/products/:id", admin, async (req, res) => { await Product.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
