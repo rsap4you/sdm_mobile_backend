@@ -21,7 +21,7 @@ import {
 import {
   productImageStorage,
   profileImageStorage,
-} from "./Cloudnary";
+} from "./Cloudinary";
 
 const r = Router();
 
