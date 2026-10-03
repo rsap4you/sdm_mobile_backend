@@ -8,7 +8,7 @@ import routes from "./routes";
 for (const k of ["MONGO_URI", "JWT_SECRET", "ADMIN_PASSWORD"]) if (!process.env[k]) { console.error("Missing env: " + k); process.exit(1); }
 const app = express();
 app.set("trust proxy", 1);
-app.use(cors({ origin: (process.env.CLIENT_URL || "http://localhost:3000").split(",") }));
+app.use(cors({ origin: (process.env.CLIENT_URL || "http://localhost:3000"||"https://sdmmobile.netlify.app/").split(",") }));
 app.use(express.json({ limit: "1mb" }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/admin", express.static(path.join(process.cwd(), "public/admin")));
