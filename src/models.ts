@@ -64,6 +64,12 @@ const R = new Schema(
 
     notes: String,
 
+    // Uploaded phone photos (Cloudinary URLs, max 5)
+    images: {
+      type: [String],
+      default: [],
+    },
+
     address: A,
 
     adminNote: String,

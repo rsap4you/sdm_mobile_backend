@@ -39,5 +39,22 @@ export const profileImageStorage = new CloudinaryStorage({
     ],
   } as any,
 });
+// Repair images (auto compress)
+export const repairImageStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "sdm-mobile/repairs",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [
+      {
+        width: 1600,
+        height: 1600,
+        crop: "limit",
+        quality: "auto",
+        fetch_format: "auto",
+      },
+    ],
+  } as any,
+});
 
 export default cloudinary;
