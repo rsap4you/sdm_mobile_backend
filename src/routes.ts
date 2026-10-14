@@ -62,6 +62,47 @@ const addr = (body: any) => {
   return x;
 };
 
+// ================= GPS LOCATION (optional) =================
+// Handles nested object (body.location) and flat "location[lat]" keys.
+// Returns undefined if missing, invalid, or clearly outside the Ahmedabad area,
+// because the typed address is the main pickup location anyway.
+
+const AMD_BOX = { minLat: 22.8, maxLat: 23.3, minLng: 72.3, maxLng: 72.9 };
+
+const loc = (body: any) => {
+  const l =
+    body?.location && typeof body.location === "object"
+      ? body.location
+      : {
+          lat: body?.["location[lat]"],
+          lng: body?.["location[lng]"],
+          accuracy: body?.["location[accuracy]"],
+        };
+
+  if (l.lat === undefined || l.lat === "" || l.lng === undefined || l.lng === "") return undefined;
+
+  const lat = Number(l.lat);
+  const lng = Number(l.lng);
+  const acc = Number(l.accuracy);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return undefined;
+  if (
+    lat < AMD_BOX.minLat ||
+    lat > AMD_BOX.maxLat ||
+    lng < AMD_BOX.minLng ||
+    lng > AMD_BOX.maxLng
+  ) {
+    return undefined;
+  }
+
+  return {
+    lat,
+    lng,
+    accuracy: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : undefined,
+  };
+};
+
 // ================= PASSWORD =================
 
 const hash = (password: string) => {
@@ -175,7 +216,12 @@ r.post("/repairs", strict, repairImages, async (req: any, res) => {
       throw fail(400, "Enter name, a 10-digit phone number and the issue.");
     }
 
-    const address = addr(b);
+    // pickup (we collect) or walkin (customer brings it). Default = pickup.
+    const pickup = esc(b.pickup) === "walkin" ? "walkin" : "pickup";
+
+    // Address is required (and validated) only for pickup
+    const address = pickup === "pickup" ? addr(b) : undefined;
+    const location = pickup === "pickup" ? loc(b) : undefined;
 
     const imei = esc(b.imei).replace(/[\s-]/g, "");
     if (imei && !/^\d{15}$/.test(imei)) throw fail(400, "IMEI must be 15 digits.");
@@ -209,7 +255,9 @@ r.post("/repairs", strict, repairImages, async (req: any, res) => {
       issue: esc(b.issue),
       notes: esc(b.notes),
       images: urls,
+      pickup,
       address,
+      location,
     });
 
     res.json({ ticket });
@@ -416,7 +464,16 @@ r.get("/admin/repairs", admin, async (req, res) => {
   }
 
   const repairs = await Repair.find(filter).sort({ createdAt: -1 }).limit(200).lean();
-  res.json(repairs);
+
+  // Add a ready-to-open Google Maps link for pickup repairs that have GPS
+  res.json(
+    repairs.map((x: any) => ({
+      ...x,
+      mapUrl: x.location?.lat
+        ? `https://www.google.com/maps?q=${x.location.lat},${x.location.lng}`
+        : "",
+    }))
+  );
 });
 
 r.patch("/admin/repairs/:id", admin, async (req, res) => {

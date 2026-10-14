@@ -8,6 +8,8 @@ export const STATUSES = [
   "delivered",
 ];
 
+export const PICKUP_MODES = ["pickup", "walkin"];
+
 // Shared address shape
 const A = {
   line1: String,
@@ -70,7 +72,22 @@ const R = new Schema(
       default: [],
     },
 
+    // "pickup" = we collect from customer address, "walkin" = customer brings it to the shop
+    pickup: {
+      type: String,
+      enum: PICKUP_MODES,
+      default: "pickup",
+    },
+
+    // Only filled for pickup requests
     address: A,
+
+    // Optional GPS location shared by the customer (pickup only)
+    location: {
+      lat: Number,
+      lng: Number,
+      accuracy: Number, // metres
+    },
 
     adminNote: String,
 
