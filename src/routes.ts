@@ -27,11 +27,36 @@ const same = (a: string, b: string) => {
 };
 
 // ================= AHMEDABAD PINCODE =================
+// ================= AHMEDABAD PINCODE =================
 
-const AMD_EXTRA = new Set<string>(["382330", "382350", "382424", "382445", "382481"]);
+// Ahmedabad city: 380001 to 380063 (this range is all city)
+// Outer areas (Naroda, Odhav, Vatva, Nikol, Vastral, Chandkheda...) use 382xxx codes.
+// Careful: 382xxx also covers Gandhinagar, Sanand, Dholka, etc., so list these one by one.
+const AMD_EXTRA = new Set<string>([
+  "382210", // Sarkhej
+  "382330", // Naroda, Medra, Limbadia
+  "382340", // Kubernagar, Noblenagar
+  "382345", // Krishnanagar, Naroda Road
+  "382346",
+  "382350", // Khodiyarnagar, Nikol, T B Nagar
+  "382352",
+  "382405", // Gyaspur, Shahwadi, Lambha
+  "382410",
+  "382415", // Odhav
+  "382418", // Vastral
+  "382424", // Chandkheda
+  "382430", // Kathwada
+  "382435", // Nandej
+  "382440", // Vatva
+  "382443", // Ramol
+  "382445", // Vatva / Hathijan area
+  "382470", // Kali
+  "382481", // Nirnaynagar
+]);
 
 const validPin = (p: string) =>
-  /^\d{6}$/.test(p) && ((+p >= 380001 && +p <= 380063) || AMD_EXTRA.has(p));
+  /^\d{6}$/.test(p) &&
+  ((+p >= 380001 && +p <= 380063) || AMD_EXTRA.has(p));
 
 // ================= ADDRESS =================
 // JSON body: body.address = {...}
