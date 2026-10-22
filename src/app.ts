@@ -11,6 +11,7 @@ app.set("trust proxy", 1);
 const origins = [
   ...(process.env.CLIENT_URL || "").split(","),
   "http://localhost:3000",
+  "http://localhost:3001",
   "https://sdmmobile.com",
   "https://www.sdmmobile.com",
   "https://sdmmobile.netlify.app",
