@@ -438,6 +438,46 @@ r.post("/contact", strict, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Profile edit: sirf name aur address. Email aur phone yahan accept hi nahi hote.
+r.patch("/auth/profile", user, async (req: any, res) => {
+  const b = req.body || {};
+  const update: any = {};
+
+  if (b.name !== undefined) {
+    const name = esc(b.name);
+    if (name.length < 2) throw fail(400, "Enter your name.");
+    update.name = name;
+  }
+
+  if (b.address !== undefined) update.address = addr(b); // pincode bhi validate hota hai
+
+  if (!Object.keys(update).length) throw fail(400, "Nothing to update.");
+
+  const u: any = await User.findByIdAndUpdate(req.uid, update, { new: true }).lean();
+  if (!u) throw fail(401, "Please log in.");
+  res.json(userOut(u));
+});
+
+// Password change (purana password chahiye)
+r.patch("/auth/password", strict, user, async (req: any, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (String(newPassword || "").length < 8) {
+    throw fail(400, "New password must be 8 or more characters.");
+  }
+
+  const u: any = await User.findById(req.uid);
+  if (!u) throw fail(401, "Please log in.");
+
+  if (!check(String(currentPassword || ""), u.password)) {
+    throw fail(401, "Current password is wrong.");
+  }
+
+  u.password = hash(String(newPassword));
+  await u.save();
+  res.json({ ok: true });
+});
+
 // ================= ADMIN =================
 
 r.post("/admin/login", strict, (req, res) => {
