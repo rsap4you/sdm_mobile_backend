@@ -15,6 +15,7 @@ const origins = [
   "https://sdmmobile.com",
   "https://www.sdmmobile.com",
   "https://sdmmobile.netlify.app",
+  "https://sdmmobile-admin.netlify.app/",
 ]
   .map((s) => s.trim().replace(/\/$/, ""))
   .filter(Boolean);
