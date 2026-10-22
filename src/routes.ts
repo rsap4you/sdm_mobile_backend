@@ -333,7 +333,7 @@ const userOut = (u: any) => ({
   profileImage: u.profileImage || "",
 });
 
-r.post("/auth/signup", strict, async (req, res) => {
+r.post("/api/auth/signup", strict, async (req, res) => {
   const b = req.body || {};
   const email = esc(b.email).toLowerCase();
 
@@ -367,7 +367,7 @@ r.post("/auth/signup", strict, async (req, res) => {
   res.json({ token: tok(String(u._id)), user: userOut(u) });
 });
 
-r.post("/auth/login", strict, async (req, res) => {
+r.post("/api/auth/login", strict, async (req, res) => {
   const u: any = await User.findOne({ email: esc(req.body?.email).toLowerCase() });
 
   if (!u || !check(String(req.body?.password || ""), u.password)) {
@@ -377,13 +377,13 @@ r.post("/auth/login", strict, async (req, res) => {
   res.json({ token: tok(String(u._id)), user: userOut(u) });
 });
 
-r.get("/auth/me", user, async (req: any, res) => {
+r.get("/api/auth/me", user, async (req: any, res) => {
   const u: any = await User.findById(req.uid).lean();
   if (!u) throw fail(401, "Please log in.");
   res.json(userOut(u));
 });
 
-r.post("/auth/profile-image", user, uploadProfile.single("image"), async (req: any, res) => {
+r.post("/api/auth/profile-image", user, uploadProfile.single("image"), async (req: any, res) => {
   if (!req.file) throw fail(400, "No image uploaded.");
 
   const updatedUser: any = await User.findByIdAndUpdate(
@@ -401,14 +401,14 @@ r.post("/auth/profile-image", user, uploadProfile.single("image"), async (req: a
   });
 });
 
-r.patch("/auth/address", user, async (req: any, res) => {
+r.patch("/api/auth/address", user, async (req: any, res) => {
   const address = addr(req.body);
   const u: any = await User.findByIdAndUpdate(req.uid, { address }, { new: true }).lean();
   if (!u) throw fail(401, "Please log in.");
   res.json({ address: u.address });
 });
 
-r.get("/my/repairs", user, async (req: any, res) => {
+r.get("/api/my/repairs", user, async (req: any, res) => {
   const repairs = await Repair.find({ userId: req.uid })
     .sort({ createdAt: -1 })
     .select("-adminNote -userId")
@@ -418,7 +418,7 @@ r.get("/my/repairs", user, async (req: any, res) => {
 
 // ================= CONTACT =================
 
-r.post("/contact", strict, async (req, res) => {
+r.post("/api/contact", strict, async (req, res) => {
   const b = req.body || {};
   const email = esc(b.email);
   const phone = esc(b.phone);
@@ -439,7 +439,7 @@ r.post("/contact", strict, async (req, res) => {
 
 // ================= ADMIN =================
 
-r.post("/admin/login", strict, (req, res) => {
+r.post("/api/admin/login", strict, (req, res) => {
   if (!same(String(req.body?.password || ""), process.env.ADMIN_PASSWORD || "\0")) {
     throw fail(401, "Wrong password.");
   }
@@ -448,7 +448,7 @@ r.post("/admin/login", strict, (req, res) => {
   });
 });
 
-r.get("/admin/dashboard", admin, async (_req, res) => {
+r.get("/api/admin/dashboard", admin, async (_req, res) => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
 
@@ -467,7 +467,7 @@ r.get("/admin/dashboard", admin, async (_req, res) => {
   });
 });
 
-r.get("/admin/repairs", admin, async (req, res) => {
+r.get("/api/admin/repairs", admin, async (req, res) => {
   const q = esc(req.query.q);
   const status = esc(req.query.status);
   const filter: any = {};
@@ -501,7 +501,7 @@ r.get("/admin/repairs", admin, async (req, res) => {
   );
 });
 
-r.patch("/admin/repairs/:id", admin, async (req, res) => {
+r.patch("/api/admin/repairs/:id", admin, async (req, res) => {
   const { status, estimate, adminNote } = req.body || {};
   const update: any = {};
 
@@ -516,17 +516,17 @@ r.patch("/admin/repairs/:id", admin, async (req, res) => {
   res.json(repair);
 });
 
-r.delete("/admin/repairs/:id", admin, async (req, res) => {
+r.delete("/api/admin/repairs/:id", admin, async (req, res) => {
   await Repair.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
 
-r.get("/admin/products", admin, async (_req, res) => {
+r.get("/api/admin/products", admin, async (_req, res) => {
   const products = await Product.find().sort({ createdAt: -1 }).lean();
   res.json(products);
 });
 
-r.post("/admin/products", admin, upload.single("image"), async (req, res) => {
+r.post("/api/admin/products", admin, upload.single("image"), async (req, res) => {
   const b = req.body || {};
 
   if (!esc(b.name) || b.price === "" || !(Number(b.price) >= 0)) {
@@ -543,7 +543,7 @@ r.post("/admin/products", admin, upload.single("image"), async (req, res) => {
   res.json(product);
 });
 
-r.patch("/admin/products/:id", admin, async (req, res) => {
+r.patch("/api/admin/products/:id", admin, async (req, res) => {
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { inStock: !!req.body?.inStock },
@@ -552,17 +552,17 @@ r.patch("/admin/products/:id", admin, async (req, res) => {
   res.json(product);
 });
 
-r.delete("/admin/products/:id", admin, async (req, res) => {
+r.delete("/api/admin/products/:id", admin, async (req, res) => {
   await Product.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
 
-r.get("/admin/messages", admin, async (_req, res) => {
+r.get("/api/admin/messages", admin, async (_req, res) => {
   const messages = await Message.find().sort({ createdAt: -1 }).limit(200).lean();
   res.json(messages);
 });
 
-r.delete("/admin/messages/:id", admin, async (req, res) => {
+r.delete("/api/admin/messages/:id", admin, async (req, res) => {
   await Message.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
