@@ -508,6 +508,23 @@ r.get("/admin/dashboard", admin, async (_req, res) => {
   });
 });
 
+r.get("/admin/users", admin, async (req, res) => {
+  const q = esc(req.query.q);
+  const filter: any = {};
+
+  if (q) {
+    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ name: rx }, { email: rx }, { phone: rx }, { "address.pincode": rx }];
+  }
+
+  const [users, total] = await Promise.all([
+    User.find(filter).sort({ createdAt: -1 }).limit(200).select("-password").lean(),
+    User.countDocuments(),
+  ]);
+
+  res.json({ total, users });
+});
+
 r.get("/admin/repairs", admin, async (req, res) => {
   const q = esc(req.query.q);
   const status = esc(req.query.status);
