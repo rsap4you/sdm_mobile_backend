@@ -13,6 +13,7 @@ const origins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "https://sdmmobile.com",
+  "https://admin.sdmmobile.com/",
   "https://www.sdmmobile.com",
   "https://sdmmobile.netlify.app",
   "https://sdmmobile-admin.netlify.app/",
